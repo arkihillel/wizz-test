@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const fetch = require('node-fetch');
 const { Op } = require("sequelize");
 const db = require('./models');
 
@@ -10,6 +11,9 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static(`${__dirname}/static`));
+
+const ANDROID_TOP_100_GAMES_URL = 'https://interview-marketing-eng-dev.s3.eu-west-1.amazonaws.com/android.top100.json';
+const IOS_TOP_100_GAMES_URL = 'https://interview-marketing-eng-dev.s3.eu-west-1.amazonaws.com/ios.top100.json';
 
 app.get('/api/games', (req, res) => db.Game.findAll()
   .then(games => res.send(games))
@@ -39,6 +43,35 @@ app.post('/api/games/search', (req, res) => {
     console.log('***There was an error retrieving the games', JSON.stringify(err));
     return res.status(500).send(err);
   });
+})
+
+const mapProperties = games => games.map(game => ({
+  publisherId: game.publisher_id,
+  name: game.name,
+  platform: game.os,
+  storeId: game.id,
+  bundleId: game.bundle_id,
+  appVersion: game.version,
+  isPublished: 1,
+}))
+
+const fetchGames = url => fetch(url).then(res => res.json());
+
+app.post('/api/games/populate', async (req, res) => {
+  const [ androidGames, iosGames ] = await Promise.all([
+    fetchGames(ANDROID_TOP_100_GAMES_URL),
+    fetchGames(IOS_TOP_100_GAMES_URL)
+  ]);
+
+  // arrays are flattened to mitigate the strange format
+  const games = mapProperties([...androidGames.flat(), ...iosGames.flat()]);
+
+  // reply early to improve the perceived performance
+  res.status(200).send(games);
+
+  // clean the database first
+  await db.Game.destroy({ truncate: true });
+  return db.Game.bulkCreate(games);
 })
   
 app.post('/api/games', (req, res) => {
