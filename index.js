@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { Op } = require("sequelize");
 const db = require('./models');
 
 const app = express();
@@ -17,6 +18,29 @@ app.get('/api/games', (req, res) => db.Game.findAll()
     return res.send(err);
   }));
 
+app.post('/api/games/search', (req, res) => {
+  const { name, platform } = req.body;
+  return db.Game.findAll({
+    where: {
+      ...(
+        name ? 
+          { name: { [Op.substring]: name } } :
+          {}
+      ),
+      ...(
+        platform ?
+          { platform } :
+          {}
+      )
+    }
+  })
+  .then(games => res.send(games))
+  .catch((err) => {
+    console.log('***There was an error retrieving the games', JSON.stringify(err));
+    return res.status(500).send(err);
+  });
+})
+  
 app.post('/api/games', (req, res) => {
   const { publisherId, name, platform, storeId, bundleId, appVersion, isPublished } = req.body;
   return db.Game.create({ publisherId, name, platform, storeId, bundleId, appVersion, isPublished })
